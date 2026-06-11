@@ -6,7 +6,21 @@ A Claude Code hook that logs every turn and tool call to a local SQLite database
 
 ![Dashboard](https://img.shields.io/badge/dashboard-localhost:9873-c87533)
 
-## Quick Start (Windows)
+## One-Line Install (Windows PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/JamesDBartlett3/claude-code-token-usage-dashboard/main/install.ps1 | iex
+```
+
+## One-Line Install (Mac, Linux, and WSL2)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/JamesDBartlett3/claude-code-token-usage-dashboard/main/install.sh | bash
+```
+
+These bootstrap scripts download the repository to a temporary directory and then run the existing installer, which finds your Python interpreter, copies hook scripts to `~/.claude/hooks/claude-code-token-usage-dashboard/`, registers them in `~/.claude/settings.json`, creates the database, and runs a smoke test.
+
+## Quick Start (Windows zip)
 
 1. Extract the zip
 2. Double-click **install.bat**
@@ -208,8 +222,10 @@ When configured, the hook deletes `turns` and `tool_calls` rows older than the r
 ## Files
 
 ```
-install.bat             # Double-click installer (Windows)
+install.bat             # Double-click installer (Windows zip)
+install.ps1             # Network installer bootstrap (Windows PowerShell)
 install.py              # Installer script
+install.sh              # Network installer bootstrap (Mac/Linux/WSL2)
 hooks/log_usage.py      # Hook script (Stop + PostToolUse events)
 serve_report.py         # Dashboard server (auto-launched by hook)
 report.html             # Browser dashboard (sql.js + Chart.js)
