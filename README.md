@@ -14,7 +14,7 @@ A Claude Code hook that logs every turn and tool call to a local SQLite database
 
 That's it. Usage is logged automatically from that point on.
 
-> The installer finds your Python interpreter, copies hook scripts to `~/.claude/hooks/`, registers them in `~/.claude/settings.json`, creates the database, and runs a smoke test. Any existing hooks are left in place.
+> The installer finds your Python interpreter, copies hook scripts to `~/.claude/hooks/claude-code-token-usage-dashboard/`, registers them in `~/.claude/settings.json`, creates the database, and runs a smoke test. Any existing hooks are left in place.
 
 <img width="3679" height="1912" alt="image" src="https://github.com/user-attachments/assets/57220cd7-8097-4d57-ab61-546ab50af504" />
 
@@ -87,7 +87,7 @@ When the installer finds models with missing metadata during migration, it promp
 
 During install/upgrade, `install.py`:
 
-1. Reads the installed app version from `~/.claude/hooks/version.json` (defaults to `0.0.0` when not present).
+1. Reads the installed app version from `~/.claude/hooks/claude-code-token-usage-dashboard/version.json` (defaults to `0.0.0` when not present).
 2. Applies migration steps for older versions while preserving existing data.
    - Database filename/path migration for known legacy locations.
    - Hook settings migration for HTTP server behavior changes (removes legacy direct `serve_report.py` hooks).
@@ -222,10 +222,10 @@ coin.svg                # Logo / favicon artwork
 After install, the source folder can be deleted. Everything runs from:
 
 ```
-~/.claude/hooks/log_usage.py      # Hook script
-~/.claude/hooks/serve_report.py   # Dashboard server
-~/.claude/hooks/report.html       # Dashboard
-~/.claude/hooks/version.json      # Installed version metadata
+~/.claude/hooks/claude-code-token-usage-dashboard/log_usage.py    # Hook script
+~/.claude/hooks/claude-code-token-usage-dashboard/serve_report.py # Dashboard server
+~/.claude/hooks/claude-code-token-usage-dashboard/report.html     # Dashboard
+~/.claude/hooks/claude-code-token-usage-dashboard/version.json    # Installed version metadata
 ~/.claude/token_usage.db          # SQLite database
 ~/.claude/settings.json           # Hook registrations (merged, not replaced)
 ```
@@ -243,9 +243,9 @@ You can also open `report.html` directly in a browser and drag-and-drop the data
 1. Remove the `Stop` and `PostToolUse` entries that reference `log_usage.py` from `~/.claude/settings.json`
 2. Delete the installed files:
    ```
-   rm ~/.claude/hooks/log_usage.py
-   rm ~/.claude/hooks/serve_report.py
-   rm ~/.claude/hooks/report.html
+   rm ~/.claude/hooks/claude-code-token-usage-dashboard/log_usage.py
+   rm ~/.claude/hooks/claude-code-token-usage-dashboard/serve_report.py
+   rm ~/.claude/hooks/claude-code-token-usage-dashboard/report.html
    rm ~/.claude/token_usage.db
    ```
 

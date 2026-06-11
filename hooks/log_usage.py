@@ -10,7 +10,8 @@ from pathlib import Path
 
 DB_PATH = Path.home() / ".claude" / "token_usage.db"
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
-REPORT_SERVER = Path.home() / ".claude" / "hooks" / "serve_report.py"
+LEGACY_REPORT_SERVER = Path.home() / ".claude" / "hooks" / "serve_report.py"
+REPORT_SERVER = Path.home() / ".claude" / "hooks" / "claude-code-token-usage-dashboard" / "serve_report.py"
 REPORT_PORT = 9873
 
 MODEL_TIER_PRICING = {
@@ -157,9 +158,10 @@ def ensure_report_server() -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         if s.connect_ex(("127.0.0.1", REPORT_PORT)) == 0:
             return
-    if REPORT_SERVER.exists():
+    server_path = REPORT_SERVER if REPORT_SERVER.exists() else LEGACY_REPORT_SERVER
+    if server_path.exists():
         subprocess.Popen(
-            [sys.executable, str(REPORT_SERVER)],
+            [sys.executable, str(server_path)],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

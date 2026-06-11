@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Installer for claude-token-logger.
 
-Copies hook scripts into ~/.claude/hooks/, merges hook configuration into
+Copies hook scripts into ~/.claude/hooks/claude-code-token-usage-dashboard/,
+merges hook configuration into
 ~/.claude/settings.json, initializes the SQLite database, and runs a
 smoke test.
 
@@ -18,10 +19,13 @@ import sys
 from pathlib import Path
 
 CLAUDE_DIR = Path.home() / ".claude"
-HOOKS_DIR = CLAUDE_DIR / "hooks"
+HOOKS_ROOT_DIR = CLAUDE_DIR / "hooks"
+APP_HOOKS_SUBDIR = "claude-code-token-usage-dashboard"
+HOOKS_DIR = HOOKS_ROOT_DIR / APP_HOOKS_SUBDIR
 SETTINGS_PATH = CLAUDE_DIR / "settings.json"
 DB_PATH = CLAUDE_DIR / "token_usage.db"
 VERSION_PATH = HOOKS_DIR / "version.json"
+LEGACY_VERSION_PATH = HOOKS_ROOT_DIR / "version.json"
 
 REPO_HOOKS = Path(__file__).resolve().parent / "hooks"
 REPO_REPORT = Path(__file__).resolve().parent / "report.html"
@@ -64,12 +68,13 @@ def semver_key(version: str | None) -> tuple[int, int, int]:
 
 
 def detect_installed_version() -> str:
-    if VERSION_PATH.exists():
-        try:
-            data = json.loads(VERSION_PATH.read_text(encoding="utf-8"))
-            return str(data.get("version", "0.0.0"))
-        except (OSError, json.JSONDecodeError, ValueError):
-            pass
+    for version_path in (VERSION_PATH, LEGACY_VERSION_PATH):
+        if version_path.exists():
+            try:
+                data = json.loads(version_path.read_text(encoding="utf-8"))
+                return str(data.get("version", "0.0.0"))
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
     return "0.0.0"
 
 
@@ -79,7 +84,7 @@ def migrate_legacy_db_paths() -> bool:
     candidates = [
         CLAUDE_DIR / "claude_token_usage.db",
         CLAUDE_DIR / "claude-code-token-usage.db",
-        HOOKS_DIR / "token_usage.db",
+        HOOKS_ROOT_DIR / "token_usage.db",
     ]
     for src in candidates:
         if src.exists():
