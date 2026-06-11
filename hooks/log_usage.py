@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 import json
+import os
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 DB_PATH = Path.home() / ".claude" / "token_usage.db"
+SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 REPORT_SERVER = Path.home() / ".claude" / "hooks" / "serve_report.py"
 REPORT_PORT = 9873
 
@@ -64,6 +66,36 @@ def ensure_report_server() -> None:
             creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
                         | getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
+
+
+def parse_retention_days(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        days = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return days if days >= 0 else None
+
+
+def get_retention_days() -> int | None:
+    env_days = parse_retention_days(os.getenv("TOKEN_USAGE_RETENTION_DAYS"))
+    if env_days is not None:
+        return env_days
+    try:
+        if SETTINGS_PATH.exists():
+            settings = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+            return parse_retention_days(settings.get("token_usage_retention_days"))
+    except Exception:
+        pass
+    return None
+
+
+def purge_old_records(conn: sqlite3.Connection, retention_days: int) -> None:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    conn.execute("DELETE FROM tool_calls WHERE recorded_at < ?", (cutoff,))
+    conn.execute("DELETE FROM turns WHERE recorded_at < ?", (cutoff,))
+    conn.commit()
 
 
 def get_transcript_info(transcript_path: str) -> dict:
@@ -327,6 +359,9 @@ def main() -> None:
     try:
         with sqlite3.connect(DB_PATH) as conn:
             init_db(conn)
+            retention_days = get_retention_days()
+            if retention_days is not None:
+                purge_old_records(conn, retention_days)
             if event == "stop":
                 handle_stop(conn, payload)
             elif event == "post-tool-use":
