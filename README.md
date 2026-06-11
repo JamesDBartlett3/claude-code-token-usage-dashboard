@@ -73,6 +73,15 @@ The installer registers two Claude Code hooks:
 
 On first run, the hook also starts a lightweight HTTP server (port 9873) that serves the dashboard and reads directly from the live database.
 
+## Data Retention
+
+You can automatically purge old records by setting a retention window (in days):
+
+- Add `"token_usage_retention_days": 30` to `~/.claude/settings.json`, or
+- Set `TOKEN_USAGE_RETENTION_DAYS=30` in the environment where Claude Code runs.
+
+When configured, the hook deletes `turns` and `tool_calls` rows older than the retention window each time it runs.
+
 ## Files
 
 ```
