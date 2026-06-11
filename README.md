@@ -95,6 +95,84 @@ That script performs the full lossless migration by doing the following in one t
 4. Backfills `turns.model_id` by joining legacy `turns.model` values to `models.model_key`.
 5. Creates `idx_turns_model_id` for query performance.
 
+### Full schema diagrams
+
+Before migration (legacy schema):
+
+```text
+turns
+├─ id                    INTEGER PRIMARY KEY AUTOINCREMENT
+├─ session_id            TEXT NOT NULL
+├─ turn_id               TEXT NOT NULL
+├─ recorded_at           TEXT NOT NULL
+├─ stop_reason           TEXT
+├─ input_tokens          INTEGER NOT NULL DEFAULT 0
+├─ output_tokens         INTEGER NOT NULL DEFAULT 0
+├─ cache_read_tokens     INTEGER NOT NULL DEFAULT 0
+├─ cache_creation_tokens INTEGER NOT NULL DEFAULT 0
+├─ cwd                   TEXT
+├─ git_branch            TEXT
+└─ model                 TEXT
+   UNIQUE(session_id, turn_id)
+
+tool_calls
+├─ id          INTEGER PRIMARY KEY AUTOINCREMENT
+├─ turn_pk     INTEGER REFERENCES turns(id) ON DELETE CASCADE
+├─ session_id  TEXT NOT NULL
+├─ turn_id     TEXT NOT NULL
+├─ recorded_at TEXT NOT NULL
+├─ tool_name   TEXT
+├─ tool_input  TEXT
+├─ exit_code   INTEGER
+└─ error       TEXT
+```
+
+After migration (new schema):
+
+```text
+models
+├─ id                            INTEGER PRIMARY KEY AUTOINCREMENT
+├─ model_key                     TEXT NOT NULL UNIQUE
+├─ model_name                    TEXT
+├─ model_version                 TEXT
+├─ model_provider                TEXT
+├─ input_price_per_mtok          REAL
+├─ output_price_per_mtok         REAL
+├─ cache_read_price_per_mtok     REAL
+└─ cache_creation_price_per_mtok REAL
+
+turns
+├─ id                    INTEGER PRIMARY KEY AUTOINCREMENT
+├─ session_id            TEXT NOT NULL
+├─ turn_id               TEXT NOT NULL
+├─ recorded_at           TEXT NOT NULL
+├─ stop_reason           TEXT
+├─ input_tokens          INTEGER NOT NULL DEFAULT 0
+├─ output_tokens         INTEGER NOT NULL DEFAULT 0
+├─ cache_read_tokens     INTEGER NOT NULL DEFAULT 0
+├─ cache_creation_tokens INTEGER NOT NULL DEFAULT 0
+├─ cwd                   TEXT
+├─ git_branch            TEXT
+├─ model                 TEXT
+└─ model_id              INTEGER REFERENCES models(id)
+   UNIQUE(session_id, turn_id)
+
+tool_calls
+├─ id          INTEGER PRIMARY KEY AUTOINCREMENT
+├─ turn_pk     INTEGER REFERENCES turns(id) ON DELETE CASCADE
+├─ session_id  TEXT NOT NULL
+├─ turn_id     TEXT NOT NULL
+├─ recorded_at TEXT NOT NULL
+├─ tool_name   TEXT
+├─ tool_input  TEXT
+├─ exit_code   INTEGER
+└─ error       TEXT
+
+Relationships
+├─ tool_calls.turn_pk -> turns.id
+└─ turns.model_id -> models.id
+```
+
 Recommended upgrade procedure:
 
 1. Stop Claude Code so no writes occur during migration.
