@@ -20,6 +20,31 @@ curl -fsSL https://raw.githubusercontent.com/JamesDBartlett3/claude-code-token-u
 
 These bootstrap scripts resolve the latest published release via the GitHub Releases API, download the single packaged zip artifact to a temporary directory, extract it, and then run the existing installer. The installer finds your Python interpreter, copies hook scripts to `~/.claude/hooks/claude-code-token-usage-dashboard/`, registers them in `~/.claude/settings.json`, creates the database, and runs a smoke test.
 
+## Customizing the Install
+
+The bootstrap scripts accept environment variables so you can point them at a fork, a private mirror, or a locally built zip:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_REPO` | `JamesDBartlett3/claude-code-token-usage-dashboard` | GitHub `owner/repo` used to resolve releases |
+| `CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_RELEASES_API` | `https://api.github.com/repos/<REPO>/releases/latest` | Full URL for the GitHub Releases API call |
+| `CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ASSET_NAME` | `claude-code-token-usage-dashboard.zip` | Filename of the release asset to download |
+| `CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ARCHIVE_URL` | *(not set)* | When set, skips the API lookup and downloads from this URL directly |
+
+Both scripts also accept `file://` paths and plain local filesystem paths for `ARCHIVE_URL`, which lets you install completely offline from a locally built zip:
+
+```powershell
+# Windows — install from a local zip
+$env:CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ARCHIVE_URL = "file://C:/path/to/claude-code-token-usage-dashboard.zip"
+irm https://raw.githubusercontent.com/JamesDBartlett3/claude-code-token-usage-dashboard/main/install.ps1 | iex
+```
+
+```bash
+# Mac/Linux/WSL2 — install from a local zip
+CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ARCHIVE_URL="file:///path/to/claude-code-token-usage-dashboard.zip" \
+  curl -fsSL https://raw.githubusercontent.com/JamesDBartlett3/claude-code-token-usage-dashboard/main/install.sh | bash
+```
+
 ## Quick Start (Windows zip)
 
 1. Extract the zip
@@ -193,6 +218,9 @@ tool_calls
 ├─ exit_code   INTEGER
 └─ error       TEXT
 
+schema_migrations
+└─ version TEXT PRIMARY KEY
+
 Relationships
 ├─ tool_calls.turn_pk -> turns.id
 └─ turns.model_id -> models.id
@@ -209,6 +237,18 @@ Recommended manual upgrade procedure (if you run SQL migration directly):
    - `SELECT COUNT(*) FROM turns WHERE model IS NOT NULL AND TRIM(model) <> '' AND model_id IS NULL;` (should be `0`)
    - `SELECT COUNT(*) FROM turns t LEFT JOIN models m ON m.id = t.model_id WHERE t.model_id IS NOT NULL AND m.id IS NULL;` (should be `0`)
 5. Start Claude Code again.
+
+## Model Pricing
+
+Costs are calculated at logging time using hardcoded per-tier pricing (dollars per million tokens):
+
+| Tier | Input | Output | Cache Read | Cache Create |
+|---|---|---|---|---|
+| **Opus** | $15.00 | $75.00 | $1.50 | $18.75 |
+| **Sonnet** | $3.00 | $15.00 | $0.30 | $3.75 |
+| **Haiku** | $0.80 | $4.00 | $0.08 | $1.00 |
+
+The tier is inferred from the model key (e.g. `claude-sonnet-4-20250514` → Sonnet). If a model key doesn't match a known tier, pricing defaults to `0` and cost rows will show $0.00 until the `models` table is updated manually or a new release ships updated pricing.
 
 ## Data Retention
 
@@ -258,12 +298,16 @@ You can also open `report.html` directly in a browser and drag-and-drop the data
 ## Uninstalling
 
 1. Remove the `Stop` and `PostToolUse` entries that reference `log_usage.py` from `~/.claude/settings.json`
-2. Delete the installed files:
-   ```
-   rm ~/.claude/hooks/claude-code-token-usage-dashboard/log_usage.py
-   rm ~/.claude/hooks/claude-code-token-usage-dashboard/serve_report.py
-   rm ~/.claude/hooks/claude-code-token-usage-dashboard/report.html
+2. Delete the installed directory and database:
+   ```bash
+   # Mac / Linux / WSL2
+   rm -rf ~/.claude/hooks/claude-code-token-usage-dashboard/
    rm ~/.claude/token_usage.db
+   ```
+   ```powershell
+   # Windows PowerShell
+   Remove-Item -Recurse -Force "$HOME/.claude/hooks/claude-code-token-usage-dashboard/"
+   Remove-Item "$HOME/.claude/token_usage.db"
    ```
 
 ## Requirements
