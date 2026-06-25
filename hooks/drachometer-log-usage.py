@@ -8,14 +8,14 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-DB_PATH = Path.home() / ".claude" / "token_usage.db"
+DB_PATH = Path.home() / ".claude" / "drachometer.db"
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
-LEGACY_REPORT_SERVER = Path.home() / ".claude" / "hooks" / "serve_report.py"
-REPORT_SERVER = Path.home() / ".claude" / "hooks" / "claude-code-token-usage-dashboard" / "serve_report.py"
+LEGACY_REPORT_SERVER = Path.home() / ".claude" / "hooks" / "drachometer-serve-report.py"
+REPORT_SERVER = Path.home() / ".claude" / "hooks" / "drachometer" / "drachometer-serve-report.py"
 REPORT_PORT = 9873
 
 # Offline fallback pricing (USD per 1M tokens). Overlaid at import by values
-# from pricing.json (installed alongside this script, kept fresh by a GitHub
+# from drachometer-pricing.json (installed alongside this script, kept fresh by a GitHub
 # Action) so newly-logged models are priced from the latest published rates.
 MODEL_TIER_PRICING = {
     "opus":   {"input": 5.0, "output": 25.0, "cache_read": 0.50, "cache_create": 6.25},
@@ -25,7 +25,7 @@ MODEL_TIER_PRICING = {
 
 
 def _load_pricing_overrides() -> None:
-    pricing_path = Path(__file__).resolve().parent / "pricing.json"
+    pricing_path = Path(__file__).resolve().parent / "drachometer-pricing.json"
     try:
         data = json.loads(pricing_path.read_text(encoding="utf-8"))
         tiers = data.get("tiers", data)

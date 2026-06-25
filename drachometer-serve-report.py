@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal HTTP server that serves report.html, token_usage.db, and SSE live-refresh."""
+"""Minimal HTTP server that serves drachometer-dashboard.html, drachometer.db, and SSE live-refresh."""
 
 import sys
 import threading
@@ -10,7 +10,7 @@ from pathlib import Path
 
 PORT = 9873
 SCRIPT_DIR = Path(__file__).resolve().parent
-DB_PATH = Path.home() / ".claude" / "token_usage.db"
+DB_PATH = Path.home() / ".claude" / "drachometer.db"
 
 # Tracks the last-known mtime of the DB file; SSE clients poll this.
 _db_mtime = 0.0
@@ -37,7 +37,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
 
-        if path == "/token_usage.db":
+        if path == "/drachometer.db":
             if DB_PATH.exists():
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
@@ -92,7 +92,7 @@ def main():
         server = ThreadingServer(("127.0.0.1", PORT), Handler)
     except OSError:
         sys.exit(0)
-    print(f"Serving report at http://localhost:{PORT}/report.html")
+    print(f"Serving report at http://localhost:{PORT}/drachometer-dashboard.html")
     server.serve_forever()
 
 

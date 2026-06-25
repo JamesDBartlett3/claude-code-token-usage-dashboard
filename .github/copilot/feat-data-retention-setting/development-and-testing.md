@@ -4,7 +4,7 @@
 Implemented configurable data retention for the local SQLite database so records older than a configured number of days are automatically purged.
 
 ## Changes Made
-- Updated `hooks/log_usage.py`:
+- Updated `hooks/drachometer-log-usage.py`:
   - Added retention configuration parsing from:
     - `TOKEN_USAGE_RETENTION_DAYS` environment variable, and
     - `token_usage_retention_days` in `~/.claude/settings.json`.
@@ -16,16 +16,16 @@ Implemented configurable data retention for the local SQLite database so records
 ## Validation Performed
 ### Baseline (before changes)
 - Ran installer smoke workflow:
-  - `python3 install.py`
+  - `python3 drachometer-install.py`
   - Result: PASS
 
 ### Targeted verification (after changes)
 1. Re-ran installer smoke workflow:
-   - `python3 install.py`
+   - `python3 drachometer-install.py`
    - Result: PASS
 2. Manual retention behavior check:
-   - Created old and new rows in `turns` and `tool_calls` in `~/.claude/token_usage.db`.
-   - Set `TOKEN_USAGE_RETENTION_DAYS=30` and triggered hook with `python3 hooks/log_usage.py stop`.
+  - Created old and new rows in `turns` and `tool_calls` in `~/.claude/drachometer.db`.
+   - Set `TOKEN_USAGE_RETENTION_DAYS=30` and triggered hook with `python3 hooks/drachometer-log-usage.py stop`.
    - Verified rows older than 30 days were removed while recent rows remained.
 
 ### Security/quality checks

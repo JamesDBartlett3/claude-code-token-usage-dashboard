@@ -1,14 +1,14 @@
-# Releasing claude-code-token-usage-dashboard
+# Releasing drachometer
 
 This document explains how to publish a new release and how the GitHub Actions release workflow operates.
 
 ## Overview
 
-When you publish a GitHub Release, the **Release package** workflow automatically builds and attaches a zip asset to that release. The one-line installers (`install.sh` and `install.ps1`) then resolve the latest release via the GitHub Releases API and install from that zip.
+When you publish a GitHub Release, the **Release package** workflow automatically builds and attaches a zip asset to that release. The one-line installers (`drachometer-install.sh` and `drachometer-install.ps1`) then resolve the latest release via the GitHub Releases API and install from that zip.
 
 ## Pre-release checklist
 
-1. Update `version.json` with the new semver version string (e.g. `"version": "1.2.0"`).
+1. Update `drachometer-version.json` with the new semver version string (e.g. `"version": "1.2.0"`).
 2. Commit and push all changes to the default branch (`main`).
 3. Confirm the `workflows/release-package.yml` workflow file is present on `main` — GitHub Actions only executes workflows that exist on the default branch.
 
@@ -31,7 +31,7 @@ File: `.github/workflows/release-package.yml`
 | Trigger | Fires on `release: types: [published]` |
 | Permissions | `contents: write` (needed to upload the release asset) |
 | Check out | Checks out the repository at the tagged commit |
-| Build zip | Creates `dist/claude-code-token-usage-dashboard.zip` containing: `README.md`, `coin.svg`, `hooks/`, `install.bat`, `install.ps1`, `install.py`, `install.sh`, `migrations/`, `report.html`, `serve_report.py`, `version.json` |
+| Build zip | Creates `dist/drachometer.zip` containing: `README.md`, `coin.svg`, `hooks/`, `drachometer-install.bat`, `drachometer-install.ps1`, `drachometer-install.py`, `drachometer-install.sh`, `migrations/`, `drachometer-dashboard.html`, `drachometer-serve-report.py`, `drachometer-version.json` |
 | Upload asset | Attaches the zip to the published release via `softprops/action-gh-release` |
 
 The zip intentionally omits development-only files (`.github/`, `.git/`, `screenshots/`, etc.) so users receive only what is needed to install and run the dashboard.
@@ -40,20 +40,20 @@ The zip intentionally omits development-only files (`.github/`, `.git/`, `screen
 
 After the workflow completes (usually under a minute):
 
-1. Open the release page on GitHub and confirm `claude-code-token-usage-dashboard.zip` appears under **Assets**.
+1. Open the release page on GitHub and confirm `drachometer.zip` appears under **Assets**.
 2. Optionally run the one-line installer against the new release to do an end-to-end smoke test:
 
    ```bash
    # macOS / Linux / WSL2
-   curl -fsSL https://raw.githubusercontent.com/JamesDBartlett3/claude-code-token-usage-dashboard/main/install.sh | bash
+   curl -fsSL https://raw.githubusercontent.com/JamesDBartlett3/drachometer/main/drachometer-install.sh | bash
    ```
 
    ```powershell
    # Windows PowerShell
-   irm https://raw.githubusercontent.com/JamesDBartlett3/claude-code-token-usage-dashboard/main/install.ps1 | iex
+   irm https://raw.githubusercontent.com/JamesDBartlett3/drachometer/main/drachometer-install.ps1 | iex
    ```
 
-3. Both installers resolve the latest release from `https://api.github.com/repos/JamesDBartlett3/claude-code-token-usage-dashboard/releases/latest`, download the zip, extract it, and run `install.py`.
+3. Both installers resolve the latest release from `https://api.github.com/repos/JamesDBartlett3/drachometer/releases/latest`, download the zip, extract it, and run `drachometer-install.py`.
 
 ## Monitoring the workflow run
 

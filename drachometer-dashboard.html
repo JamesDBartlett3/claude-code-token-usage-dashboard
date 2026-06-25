@@ -280,7 +280,7 @@
 
 <script>
 // Offline fallback pricing (USD per 1M tokens). Overlaid at startup by
-// loadPricing() from pricing.json (repo-hosted, kept fresh by a GitHub Action).
+// loadPricing() from drachometer-pricing.json (repo-hosted, kept fresh by a GitHub Action).
 let MODEL_PRICING = {
   opus:   { input: 5, output: 25, cacheRead: 0.50, cacheCreate: 6.25 },
   sonnet: { input: 3, output: 15, cacheRead: 0.30, cacheCreate: 3.75 },
@@ -1154,7 +1154,7 @@ async function checkForUpdates() {
   } catch {}
 }
 
-// Overlay MODEL_PRICING from pricing.json. Tries the repo's latest (GitHub raw)
+// Overlay MODEL_PRICING from drachometer-pricing.json. Tries the repo's latest (GitHub raw)
 // first so newly-published prices take effect without reinstalling, then the
 // bundled local copy, then leaves the built-in constants as the offline fallback.
 async function loadPricing() {
@@ -1164,8 +1164,8 @@ async function loadPricing() {
     if (v && v.repository) repo = v.repository;
   } catch {}
   const sources = [
-    `https://raw.githubusercontent.com/${repo}/main/pricing.json`,
-    'pricing.json',
+    `https://raw.githubusercontent.com/${repo}/main/drachometer-pricing.json`,
+    'drachometer-pricing.json',
   ];
   for (const url of sources) {
     try {

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Scrape Anthropic's published pricing and refresh pricing.json.
+"""Scrape Anthropic's published pricing and refresh drachometer-pricing.json.
 
 Anthropic does not expose a pricing REST API, so this scrapes the public
 pricing/model documentation pages. It is intentionally fail-loud: if it cannot
 parse valid pricing for every supported tier, it exits non-zero WITHOUT writing
-anything, leaving the last-good pricing.json in place. The calling workflow
+anything, leaving the last-good drachometer-pricing.json in place. The calling workflow
 surfaces that failure (notifying maintainers) while the dashboard keeps using
 the previously committed prices.
 
 Usage:
-    python scripts/update_pricing.py            # write repo-root pricing.json
-    python scripts/update_pricing.py --check     # parse + print, do not write
+    python scripts/drachometer-update-pricing.py            # write repo-root drachometer-pricing.json
+    python scripts/drachometer-update-pricing.py --check     # parse + print, do not write
 """
 
 import argparse
@@ -22,12 +22,12 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-PRICING_PATH = Path(__file__).resolve().parent.parent / "pricing.json"
+PRICING_PATH = Path(__file__).resolve().parent.parent / "drachometer-pricing.json"
 
 # Tiers the dashboard understands. Each logged model is classified into one of
 # these by substring match, so we only need a representative price per tier.
 # Every tier is OPTIONAL: a tier present on the page is scraped; a tier that is
-# absent (e.g. a model withdrawn from sale) keeps its existing pricing.json
+# absent (e.g. a model withdrawn from sale) keeps its existing drachometer-pricing.json
 # value rather than being wiped. The run only fails when NO tier at all can be
 # parsed -- that signals the scraper or page format broke, not a model removal.
 KNOWN_TIERS = ("fable", "opus", "sonnet", "haiku")
@@ -39,7 +39,7 @@ SOURCE_URLS = (
     "https://platform.claude.com/docs/en/about-claude/models/overview.md",
 )
 
-USER_AGENT = "claude-code-token-usage-dashboard pricing updater (+https://github.com/JamesDBartlett3/claude-code-token-usage-dashboard)"
+USER_AGENT = "drachometer pricing updater (+https://github.com/JamesDBartlett3/drachometer)"
 
 # Standard Anthropic prompt-caching multipliers relative to base input price.
 CACHE_READ_MULT = 0.10
@@ -142,8 +142,8 @@ def load_existing() -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Refresh pricing.json from Anthropic's published pricing.")
-    parser.add_argument("--check", action="store_true", help="Parse and print without writing pricing.json.")
+    parser = argparse.ArgumentParser(description="Refresh drachometer-pricing.json from Anthropic's published pricing.")
+    parser.add_argument("--check", action="store_true", help="Parse and print without writing drachometer-pricing.json.")
     args = parser.parse_args()
 
     found: dict = {}
@@ -165,7 +165,7 @@ def main() -> int:
 
     if not found:
         print("ERROR: could not parse pricing for any known tier.")
-        print("Anthropic's pricing page format may have changed. pricing.json left unchanged.")
+        print("Anthropic's pricing page format may have changed. drachometer-pricing.json left unchanged.")
         return 1
 
     existing = load_existing()

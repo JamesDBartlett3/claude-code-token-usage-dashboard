@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_REPO:-JamesDBartlett3/claude-code-token-usage-dashboard}"
-RELEASES_API="${CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_RELEASES_API:-https://api.github.com/repos/${REPO}/releases/latest}"
-ASSET_NAME="${CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ASSET_NAME:-claude-code-token-usage-dashboard.zip}"
-ARCHIVE_URL="${CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ARCHIVE_URL:-}"
+REPO="${DRACHOMETER_REPO:-JamesDBartlett3/drachometer}"
+RELEASES_API="${DRACHOMETER_RELEASES_API:-https://api.github.com/repos/${REPO}/releases/latest}"
+ASSET_NAME="${DRACHOMETER_ASSET_NAME:-drachometer.zip}"
+ARCHIVE_URL="${DRACHOMETER_ARCHIVE_URL:-}"
 
-work_dir="$(mktemp -d "${TMPDIR:-/tmp}/claude-code-token-usage-dashboard-XXXXXX")"
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/drachometer-XXXXXX")"
 cleanup() {
   rm -rf "$work_dir"
 }
@@ -118,9 +118,9 @@ with zipfile.ZipFile(archive_path) as archive:
     archive.extractall(output_dir)
 PY
 
-installer_path="$(find "$work_dir" -type f -name install.py -print -quit)"
+installer_path="$(find "$work_dir" -type f -name drachometer-install.py -print -quit)"
 if [[ -z "$installer_path" ]]; then
-  echo "ERROR: install.py was not found in the downloaded archive." >&2
+  echo "ERROR: drachometer-install.py was not found in the downloaded archive." >&2
   exit 1
 fi
 

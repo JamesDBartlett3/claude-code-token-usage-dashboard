@@ -1,6 +1,8 @@
-# Claude Code Token Usage Dashboard
+# Drachometer
 
 ![Coin logo](coin.svg)
+
+Drachometer: "drachma" (ancient Greek currency) + "meter" = a token usage meter for Claude Code.
 
 A Claude Code hook that logs every turn and tool call to a local SQLite database, with a browser dashboard for exploring token usage, costs, and cache efficiency. Features model-aware pricing, multi-sort tables, date filtering, live SSE refresh, and rich charts. No API keys or external services. 
 
@@ -9,16 +11,16 @@ A Claude Code hook that logs every turn and tool call to a local SQLite database
 ## One-Line Install (Windows PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/JamesDBartlett3/claude-code-token-usage-dashboard/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/JamesDBartlett3/drachometer/main/drachometer-install.ps1 | iex
 ```
 
 ## One-Line Install (Mac, Linux, and WSL2)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JamesDBartlett3/claude-code-token-usage-dashboard/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/JamesDBartlett3/drachometer/main/drachometer-install.sh | bash
 ```
 
-These bootstrap scripts resolve the latest published release via the GitHub Releases API, download the single packaged zip artifact to a temporary directory, extract it, and then run the existing installer. The installer finds your Python interpreter, copies hook scripts to `~/.claude/hooks/claude-code-token-usage-dashboard/`, registers them in `~/.claude/settings.json`, creates the database, and runs a smoke test.
+These bootstrap scripts resolve the latest published release via the GitHub Releases API, download the single packaged zip artifact to a temporary directory, extract it, and then run the existing installer. The installer finds your Python interpreter, copies hook scripts to `~/.claude/hooks/drachometer/`, registers them in `~/.claude/settings.json`, creates the database, and runs a smoke test.
 
 ## Customizing the Install
 
@@ -26,34 +28,34 @@ The bootstrap scripts accept environment variables so you can point them at a fo
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_REPO` | `JamesDBartlett3/claude-code-token-usage-dashboard` | GitHub `owner/repo` used to resolve releases |
-| `CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_RELEASES_API` | `https://api.github.com/repos/<REPO>/releases/latest` | Full URL for the GitHub Releases API call |
-| `CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ASSET_NAME` | `claude-code-token-usage-dashboard.zip` | Filename of the release asset to download |
-| `CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ARCHIVE_URL` | *(not set)* | When set, skips the API lookup and downloads from this URL directly |
+| `DRACHOMETER_REPO` | `JamesDBartlett3/drachometer` | GitHub `owner/repo` used to resolve releases |
+| `DRACHOMETER_RELEASES_API` | `https://api.github.com/repos/<REPO>/releases/latest` | Full URL for the GitHub Releases API call |
+| `DRACHOMETER_ASSET_NAME` | `drachometer.zip` | Filename of the release asset to download |
+| `DRACHOMETER_ARCHIVE_URL` | *(not set)* | When set, skips the API lookup and downloads from this URL directly |
 
 Both scripts also accept `file://` paths and plain local filesystem paths for `ARCHIVE_URL`, which lets you install completely offline from a locally built zip:
 
 ```powershell
 # Windows — install from a local zip
-$env:CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ARCHIVE_URL = "file://C:/path/to/claude-code-token-usage-dashboard.zip"
-irm https://raw.githubusercontent.com/JamesDBartlett3/claude-code-token-usage-dashboard/main/install.ps1 | iex
+$env:DRACHOMETER_ARCHIVE_URL = "file://C:/path/to/drachometer.zip"
+irm https://raw.githubusercontent.com/JamesDBartlett3/drachometer/main/drachometer-install.ps1 | iex
 ```
 
 ```bash
 # Mac/Linux/WSL2 — install from a local zip
-CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ARCHIVE_URL="file:///path/to/claude-code-token-usage-dashboard.zip" \
-  curl -fsSL https://raw.githubusercontent.com/JamesDBartlett3/claude-code-token-usage-dashboard/main/install.sh | bash
+DRACHOMETER_ARCHIVE_URL="file:///path/to/drachometer.zip" \
+  curl -fsSL https://raw.githubusercontent.com/JamesDBartlett3/drachometer/main/drachometer-install.sh | bash
 ```
 
 ## Quick Start (Windows zip)
 
 1. Extract the zip
-2. Double-click **install.bat**
-3. Open **[http://localhost:9873/report.html](http://localhost:9873/report.html)**
+2. Double-click **drachometer-install.bat**
+3. Open **[http://localhost:9873/drachometer-dashboard.html](http://localhost:9873/drachometer-dashboard.html)**
 
 That's it. Usage is logged automatically from that point on.
 
-> The installer finds your Python interpreter, copies hook scripts to `~/.claude/hooks/claude-code-token-usage-dashboard/`, registers them in `~/.claude/settings.json`, creates the database, and runs a smoke test. Any existing hooks are left in place.
+> The installer finds your Python interpreter, copies hook scripts to `~/.claude/hooks/drachometer/`, registers them in `~/.claude/settings.json`, creates the database, and runs a smoke test. Any existing hooks are left in place.
 
 <img width="3679" height="1912" alt="image" src="https://github.com/user-attachments/assets/57220cd7-8097-4d57-ab61-546ab50af504" />
 
@@ -124,12 +126,12 @@ When the installer finds models with missing metadata during migration, it promp
 
 ## Automatic Migration Mechanism
 
-During install/upgrade, `install.py`:
+During install/upgrade, `drachometer-install.py`:
 
-1. Reads the installed app version from `~/.claude/hooks/claude-code-token-usage-dashboard/version.json` (defaults to `0.0.0` when not present).
+1. Reads the installed app version from `~/.claude/hooks/drachometer/drachometer-version.json` (defaults to `0.0.0` when not present).
 2. Applies migration steps for older versions while preserving existing data.
    - Database filename/path migration for known legacy locations.
-   - Hook settings migration for HTTP server behavior changes (removes legacy direct `serve_report.py` hooks).
+   - Hook settings migration for HTTP server behavior changes (removes legacy direct `drachometer-serve-report.py` hooks).
    - Database schema migration/backfill via normal DB initialization.
 3. Copies the latest files and writes the new version metadata.
 
@@ -230,9 +232,9 @@ Recommended manual upgrade procedure (if you run SQL migration directly):
 
 1. Stop Claude Code so no writes occur during migration.
 2. Back up the database:
-   - `cp ~/.claude/token_usage.db ~/.claude/token_usage.db.bak`
+   - `cp ~/.claude/drachometer.db ~/.claude/drachometer.db.bak`
 3. Run the migration script:
-   - `sqlite3 ~/.claude/token_usage.db < migrations/001_migrate_to_model_dimension.sql`
+   - `sqlite3 ~/.claude/drachometer.db < migrations/001_migrate_to_model_dimension.sql`
 4. Verify migration results:
    - `SELECT COUNT(*) FROM turns WHERE model IS NOT NULL AND TRIM(model) <> '' AND model_id IS NULL;` (should be `0`)
    - `SELECT COUNT(*) FROM turns t LEFT JOIN models m ON m.id = t.model_id WHERE t.model_id IS NOT NULL AND m.id IS NULL;` (should be `0`)
@@ -240,7 +242,7 @@ Recommended manual upgrade procedure (if you run SQL migration directly):
 
 ## Model Pricing
 
-All per-token pricing lives in one place — [`pricing.json`](pricing.json) — and is expressed in dollars per million tokens per model tier:
+All per-token pricing lives in one place — [`drachometer-pricing.json`](drachometer-pricing.json) — and is expressed in dollars per million tokens per model tier:
 
 ```json
 {
@@ -254,7 +256,7 @@ All per-token pricing lives in one place — [`pricing.json`](pricing.json) — 
 
 The tier is inferred from the model key (e.g. `claude-sonnet-4-6` → Sonnet). The same file is read by all three components, so they never disagree:
 
-- The **dashboard** fetches the latest `pricing.json` from the repo (GitHub raw) on load, falling back to the installed copy, then to a built-in table if offline.
+- The **dashboard** fetches the latest `drachometer-pricing.json` from the repo (GitHub raw) on load, falling back to the installed copy, then to a built-in table if offline.
 - The **hook** reads its installed copy when it first records a model, storing that model's prices in the `models` table.
 - The **installer** reads it when creating model rows during install/migration.
 
@@ -262,9 +264,9 @@ A turn's cost uses the model's stored per-row pricing when present (so you can h
 
 ### Automatic pricing updates
 
-Anthropic does not publish a pricing REST API, so [`.github/workflows/update-pricing.yml`](.github/workflows/update-pricing.yml) runs [`scripts/update_pricing.py`](scripts/update_pricing.py) on a weekly schedule (and on demand) to scrape the published pricing and commit any changes to `pricing.json`.
+Anthropic does not publish a pricing REST API, so [`.github/workflows/update-pricing.yml`](.github/workflows/update-pricing.yml) runs [`scripts/drachometer-update-pricing.py`](scripts/drachometer-update-pricing.py) on a weekly schedule (and on demand) to scrape the published pricing and commit any changes to `drachometer-pricing.json`.
 
-Every tier is **optional**: if a model disappears from the pricing page (e.g. a withdrawn model), its last-known price is preserved rather than wiped. The scraper is also **fail-loud**: if it can't parse *any* pricing at all — which means the page format or URL changed — it exits non-zero and writes nothing, so the workflow run fails (notifying maintainers) while the last-good `pricing.json` stays in effect.
+Every tier is **optional**: if a model disappears from the pricing page (e.g. a withdrawn model), its last-known price is preserved rather than wiped. The scraper is also **fail-loud**: if it can't parse *any* pricing at all — which means the page format or URL changed — it exits non-zero and writes nothing, so the workflow run fails (notifying maintainers) while the last-good `drachometer-pricing.json` stays in effect.
 
 The `fable` tier is fully wired through the dashboard, hook, and installer, so when Claude Fable pricing is published it is picked up automatically with no code or schema change.
 
@@ -282,19 +284,19 @@ When configured, the hook deletes `turns` and `tool_calls` rows older than the r
 ## Files
 
 ```
-install.bat             # Double-click installer (Windows zip)
-install.ps1             # Network installer bootstrap (Windows PowerShell)
-install.py              # Installer script
-install.sh              # Network installer bootstrap (Mac/Linux/WSL2)
-hooks/log_usage.py      # Hook script (Stop + PostToolUse events)
-serve_report.py         # Dashboard server (auto-launched by hook)
-report.html             # Browser dashboard (sql.js + Chart.js)
-pricing.json            # Per-tier model pricing (single source of truth)
-version.json            # App version + GitHub release metadata
+drachometer-install.bat             # Double-click installer (Windows zip)
+drachometer-install.ps1             # Network installer bootstrap (Windows PowerShell)
+drachometer-install.py              # Installer script
+drachometer-install.sh              # Network installer bootstrap (Mac/Linux/WSL2)
+hooks/drachometer-log-usage.py      # Hook script (Stop + PostToolUse events)
+drachometer-serve-report.py         # Dashboard server (auto-launched by hook)
+drachometer-dashboard.html             # Browser dashboard (sql.js + Chart.js)
+drachometer-pricing.json            # Per-tier model pricing (single source of truth)
+drachometer-version.json # App version + GitHub release metadata
 coin.svg                # Logo / favicon artwork
-scripts/update_pricing.py             # Scrapes Anthropic pricing -> pricing.json
+scripts/drachometer-update-pricing.py             # Scrapes Anthropic pricing -> drachometer-pricing.json
 .github/workflows/release-package.yml # Publishes the release zip asset
-.github/workflows/update-pricing.yml  # Weekly pricing refresh (commits pricing.json)
+.github/workflows/update-pricing.yml  # Weekly pricing refresh (commits drachometer-pricing.json)
 ```
 
 ## Installed Locations
@@ -302,36 +304,36 @@ scripts/update_pricing.py             # Scrapes Anthropic pricing -> pricing.jso
 After install, the source folder can be deleted. Everything runs from:
 
 ```
-~/.claude/hooks/claude-code-token-usage-dashboard/log_usage.py    # Hook script
-~/.claude/hooks/claude-code-token-usage-dashboard/serve_report.py # Dashboard server
-~/.claude/hooks/claude-code-token-usage-dashboard/report.html     # Dashboard
-~/.claude/hooks/claude-code-token-usage-dashboard/pricing.json    # Per-tier model pricing
-~/.claude/hooks/claude-code-token-usage-dashboard/version.json    # Installed version metadata
-~/.claude/token_usage.db          # SQLite database
+~/.claude/hooks/drachometer/drachometer-log-usage.py    # Hook script
+~/.claude/hooks/drachometer/drachometer-serve-report.py # Dashboard server
+~/.claude/hooks/drachometer/drachometer-dashboard.html     # Dashboard
+~/.claude/hooks/drachometer/drachometer-pricing.json    # Per-tier model pricing
+~/.claude/hooks/drachometer/drachometer-version.json    # Installed version metadata
+~/.claude/drachometer.db          # SQLite database
 ~/.claude/settings.json           # Hook registrations (merged, not replaced)
 ```
 
 ## Viewing the Dashboard
 
-Open **[http://localhost:9873/report.html](http://localhost:9873/report.html)** in your browser.
+Open **[http://localhost:9873/drachometer-dashboard.html](http://localhost:9873/drachometer-dashboard.html)** in your browser.
 
 The server starts automatically on your first Claude Code session after install. If the server isn't running, just start any Claude Code session and it will launch.
 
-You can also open `report.html` directly in a browser and drag-and-drop the database file (`~/.claude/token_usage.db`) onto it.
+You can also open `drachometer-dashboard.html` directly in a browser and drag-and-drop the database file (`~/.claude/drachometer.db`) onto it.
 
 ## Uninstalling
 
-1. Remove the `Stop` and `PostToolUse` entries that reference `log_usage.py` from `~/.claude/settings.json`
+1. Remove the `Stop` and `PostToolUse` entries that reference `drachometer-log-usage.py` from `~/.claude/settings.json`
 2. Delete the installed directory and database:
    ```bash
    # Mac / Linux / WSL2
-   rm -rf ~/.claude/hooks/claude-code-token-usage-dashboard/
-   rm ~/.claude/token_usage.db
+   rm -rf ~/.claude/hooks/drachometer/
+   rm ~/.claude/drachometer.db
    ```
    ```powershell
    # Windows PowerShell
-   Remove-Item -Recurse -Force "$HOME/.claude/hooks/claude-code-token-usage-dashboard/"
-   Remove-Item "$HOME/.claude/token_usage.db"
+   Remove-Item -Recurse -Force "$HOME/.claude/hooks/drachometer/"
+   Remove-Item "$HOME/.claude/drachometer.db"
    ```
 
 ## Requirements

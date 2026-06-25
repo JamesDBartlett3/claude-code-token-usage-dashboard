@@ -1,7 +1,7 @@
 # TODO List
 
 
-- [ ] Generate 5 possible names for this solution. Should be clever, catchy, and relevant to the functionality of the solution. After renaming, update all references in the codebase, documentation, and configuration files to reflect the new name.
+- [x] Generate 5 possible names for this solution. Should be clever, catchy, and relevant to the functionality of the solution. After renaming, update all references in the codebase, documentation, and configuration files to reflect the new name. _(Named **Drachometer** — vetted collision-free; renamed all files + the GitHub repo.)_
 - [ ] Fix naming inconsistencies in the codebase, ensuring that all variables, functions, and files follow a consistent naming convention that is clear and descriptive.
 - [ ] Mesh rollout phase 1 (MVP replication on LAN/VM networks)
     - [ ] During installation, configure each instance as a mesh node (node ID, listen address, peer seed list, startup registration).

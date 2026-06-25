@@ -18,21 +18,21 @@ jobs:
       - name: Build release zip
         run: |
           mkdir -p dist
-          zip -r dist/claude-code-token-usage-dashboard.zip \
+          zip -r dist/drachometer.zip \
             README.md \
             coin.svg \
             hooks \
-            install.bat \
-            install.ps1 \
-            install.py \
-            install.sh \
+            drachometer-install.bat \
+            drachometer-install.ps1 \
+            drachometer-install.py \
+            drachometer-install.sh \
             migrations \
-            pricing.json \
-            report.html \
-            serve_report.py \
-            version.json
+            drachometer-pricing.json \
+            drachometer-dashboard.html \
+            drachometer-serve-report.py \
+            drachometer-version.json
 
       - name: Upload release zip
         uses: softprops/action-gh-release@v3.0.0
         with:
-          files: dist/claude-code-token-usage-dashboard.zip
+          files: dist/drachometer.zip

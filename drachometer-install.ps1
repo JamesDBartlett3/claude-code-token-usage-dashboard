@@ -1,25 +1,25 @@
 $ErrorActionPreference = 'Stop'
 
-$repo = if ($env:CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_REPO) {
-    $env:CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_REPO
+$repo = if ($env:DRACHOMETER_REPO) {
+    $env:DRACHOMETER_REPO
 } else {
-    'JamesDBartlett3/claude-code-token-usage-dashboard'
+    'JamesDBartlett3/drachometer'
 }
 
-$releasesApi = if ($env:CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_RELEASES_API) {
-    $env:CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_RELEASES_API
+$releasesApi = if ($env:DRACHOMETER_RELEASES_API) {
+    $env:DRACHOMETER_RELEASES_API
 } else {
     "https://api.github.com/repos/$repo/releases/latest"
 }
 
-$assetName = if ($env:CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ASSET_NAME) {
-    $env:CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ASSET_NAME
+$assetName = if ($env:DRACHOMETER_ASSET_NAME) {
+    $env:DRACHOMETER_ASSET_NAME
 } else {
-    'claude-code-token-usage-dashboard.zip'
+    'drachometer.zip'
 }
 
-$archiveUrl = $env:CLAUDE_CODE_TOKEN_USAGE_DASHBOARD_ARCHIVE_URL
-$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("claude-code-token-usage-dashboard-" + [System.Guid]::NewGuid().ToString('N'))
+$archiveUrl = $env:DRACHOMETER_ARCHIVE_URL
+$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("drachometer-" + [System.Guid]::NewGuid().ToString('N'))
 $archivePath = Join-Path $tempRoot $assetName
 
 function Find-Python {
@@ -90,9 +90,9 @@ try {
     Write-Host 'Extracting installer...'
     Expand-Archive -Path $archivePath -DestinationPath $tempRoot -Force
 
-    $installer = Get-ChildItem -Path $tempRoot -Filter install.py -Recurse | Select-Object -First 1
+    $installer = Get-ChildItem -Path $tempRoot -Filter drachometer-install.py -Recurse | Select-Object -First 1
     if (-not $installer) {
-        throw 'install.py was not found in the downloaded archive.'
+        throw 'drachometer-install.py was not found in the downloaded archive.'
     }
 
     $python = Find-Python

@@ -1,4 +1,4 @@
--- Migrates a legacy token_usage.db schema to the model-dimension schema.
+-- Migrates a legacy drachometer.db schema to the model-dimension schema.
 -- Intended source schema: turns has a text `model` column and no `models` table.
 -- This migration is additive and preserves all existing turn/tool_call rows.
 

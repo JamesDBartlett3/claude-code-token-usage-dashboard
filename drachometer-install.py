@@ -7,7 +7,7 @@ merges hook configuration into
 smoke test.
 
 Usage:
-    python install.py
+    python drachometer-install.py
 """
 
 import json
@@ -28,28 +28,28 @@ VERSION_PATH = HOOKS_DIR / "drachometer-version.json"
 LEGACY_VERSION_PATH = HOOKS_ROOT_DIR / "drachometer-version.json"
 
 REPO_HOOKS = Path(__file__).resolve().parent / "hooks"
-REPO_REPORT = Path(__file__).resolve().parent / "report.html"
-REPO_SERVER = Path(__file__).resolve().parent / "serve_report.py"
+REPO_REPORT = Path(__file__).resolve().parent / "drachometer-dashboard.html"
+REPO_SERVER = Path(__file__).resolve().parent / "drachometer-serve-report.py"
 
 REPO_README = Path(__file__).resolve().parent / "README.md"
 REPO_COIN = Path(__file__).resolve().parent / "coin.svg"
 REPO_VERSION = Path(__file__).resolve().parent / "drachometer-version.json"
-REPO_PRICING = Path(__file__).resolve().parent / "pricing.json"
+REPO_PRICING = Path(__file__).resolve().parent / "drachometer-pricing.json"
 
 APP_METADATA = json.loads(REPO_VERSION.read_text(encoding="utf-8"))
 APP_VERSION = str(APP_METADATA.get("version", "0.0.0"))
 
 HOOK_FILES = {
-    "log_usage.py": REPO_HOOKS / "log_usage.py",
-    "serve_report.py": REPO_SERVER,
-    "report.html": REPO_REPORT,
+    "drachometer-log-usage.py": REPO_HOOKS / "drachometer-log-usage.py",
+    "drachometer-serve-report.py": REPO_SERVER,
+    "drachometer-dashboard.html": REPO_REPORT,
     "README.md": REPO_README,
     "coin.svg": REPO_COIN,
     "drachometer-version.json": REPO_VERSION,
-    "pricing.json": REPO_PRICING,
+    "drachometer-pricing.json": REPO_PRICING,
 }
 
-# Offline fallback pricing (USD per 1M tokens). Overlaid below from pricing.json
+# Offline fallback pricing (USD per 1M tokens). Overlaid below from drachometer-pricing.json
 # so model rows the installer creates/backfills use the latest published rates.
 MODEL_TIER_PRICING = {
     "opus":   {"input": 5.0, "output": 25.0, "cache_read": 0.50, "cache_create": 6.25},
@@ -125,7 +125,7 @@ def migrate_settings_for_server_changes() -> bool:
             filtered = []
             for hook in hook_defs:
                 command = hook.get("command", "") if isinstance(hook, dict) else ""
-                if "serve_report.py" in command:
+                if "drachometer-serve-report.py" in command:
                     changed = True
                     continue
                 filtered.append(hook)
@@ -338,7 +338,7 @@ def copy_hooks(python_exe: str) -> None:
 
 
 def build_hook_commands(python_exe: str) -> dict:
-    hook_script = str(HOOKS_DIR / "log_usage.py")
+    hook_script = str(HOOKS_DIR / "drachometer-log-usage.py")
     # Use forward slashes for cross-platform JSON compatibility
     python_json = python_exe.replace("\\", "/")
     script_json = hook_script.replace("\\", "/")
@@ -380,7 +380,7 @@ def merge_settings(python_exe: str) -> None:
     for event, entries in new_hooks.items():
         existing = hooks.get(event, [])
         already = any(
-            "log_usage.py" in h.get("command", "")
+            "drachometer-log-usage.py" in h.get("command", "")
             for group in existing
             for h in group.get("hooks", [])
         )
@@ -388,7 +388,7 @@ def merge_settings(python_exe: str) -> None:
             # Update existing entry in place
             for group in existing:
                 for h in group.get("hooks", []):
-                    if "log_usage.py" in h.get("command", ""):
+                    if "drachometer-log-usage.py" in h.get("command", ""):
                         h["command"] = entries[0]["hooks"][0]["command"]
             print(f"  Updated existing {event} hook")
         else:
@@ -466,7 +466,7 @@ def init_database() -> None:
 
 
 def smoke_test(python_exe: str) -> bool:
-    hook_script = str(HOOKS_DIR / "log_usage.py")
+    hook_script = str(HOOKS_DIR / "drachometer-log-usage.py")
     payload = json.dumps({
         "session_id": "__install_test__",
         "stop_reason": "end_turn",
@@ -517,7 +517,7 @@ def main() -> None:
     else:
         print("  FAIL - hook did not write to the database.")
         print("  Check that the hook script runs without errors:")
-        print(f"    {python_exe} {HOOKS_DIR / 'log_usage.py'} stop")
+        print(f"    {python_exe} {HOOKS_DIR / 'drachometer-log-usage.py'} stop")
         sys.exit(1)
 
     print("\n" + "=" * 40)
@@ -525,7 +525,7 @@ def main() -> None:
     print("Token usage will be logged automatically every time you")
     print("use Claude Code. The report server starts on first use.\n")
     print("To view the report, open:")
-    print("  http://localhost:9873/report.html\n")
+    print("  http://localhost:9873/drachometer-dashboard.html\n")
     print(f"Database: {DB_PATH}")
     print(f"Hooks:    {HOOKS_DIR}")
     print(f"Version:  {APP_VERSION}")
