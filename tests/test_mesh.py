@@ -10,6 +10,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -188,6 +189,54 @@ class TestImportMerge(MeshTestBase):
         self.assertGreater(applied_first, 0)
         self.assertEqual(applied_again, 0)  # re-import is idempotent
         self.assertEqual(turn_sessions(local), {"l1", "x1", "x2"})
+
+
+class TestMeshPhaseTwoFeatures(MeshTestBase):
+    def test_config_defaults_and_schema_metadata(self):
+        cfg = mesh.normalize_config({"mesh_id": "test-mesh", "node_id": "nodeA"})
+        self.assertEqual(cfg["log_level"], "info")
+        self.assertEqual(cfg["max_retries"], 3)
+        self.assertEqual(cfg["retention_days"], 0)
+        db = self.tmp / "meta.db"
+        conn = sqlite3.connect(db)
+        try:
+            mesh.ensure_schema(conn)
+            row = conn.execute("SELECT value FROM mesh_meta WHERE key = 'schema_version'").fetchone()
+            self.assertEqual(row[0], str(mesh.SCHEMA_VERSION))
+        finally:
+            conn.close()
+
+    def test_compact_oplog_preserves_recent_history(self):
+        db = self.tmp / "compact.db"
+        conn = sqlite3.connect(db)
+        try:
+            conn.executescript(BASE_SCHEMA)
+            mesh.ensure_schema(conn)
+            old_ts = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+            new_ts = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+            conn.execute(
+                "INSERT INTO oplog (event_id, origin_node, lamport, created_at, entity, op, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ("old-1", "nodeA", 1, old_ts, "turn", "upsert", "{}"),
+            )
+            conn.execute(
+                "INSERT INTO oplog (event_id, origin_node, lamport, created_at, entity, op, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ("new-1", "nodeA", 2, new_ts, "turn", "upsert", "{}"),
+            )
+            conn.commit()
+            summary = mesh.compact_oplog({"retention_days": 3, "retention_keep_per_origin": 1}, db_path=db)
+            self.assertEqual(summary["deleted"], 1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM oplog").fetchone()[0], 1)
+        finally:
+            conn.close()
+
+    def test_collect_health_metrics_reports_alerts(self):
+        mesh.reset_metrics()
+        cfg = {"mesh_id": "test-mesh", "node_id": "nodeA", "peers": ["127.0.0.1:9999"]}
+        metrics = mesh.collect_health_metrics(cfg, db_path=self.tmp / "health.db")
+        self.assertEqual(metrics["peer_reachability"]["total"], 1)
+        self.assertEqual(metrics["alert"], "unreachable peers")
+        self.assertIn("dedupe_rate", metrics)
+        self.assertIn("conflict_rate", metrics)
 
 
 class TestTwoNodeConvergence(MeshTestBase):
