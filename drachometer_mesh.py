@@ -80,6 +80,8 @@ _METRICS = {
     "last_sync_latency_ms": 0.0,
 }
 
+_LOG_LEVEL_CACHE: tuple[int | None, int | None, str] | None = None
+
 
 # --------------------------------------------------------------------------- #
 # Logging
@@ -89,15 +91,29 @@ def _config_log_level(cfg: dict | None) -> str:
     return str(level).lower()
 
 
-def _should_log(level: str, cfg: dict | None) -> bool:
+def _cached_log_level() -> str:
+    global _LOG_LEVEL_CACHE
+    try:
+        stat = CONFIG_PATH.stat()
+    except OSError:
+        return DEFAULT_LOG_LEVEL
+    cache_key = (stat.st_mtime_ns, stat.st_size)
+    if _LOG_LEVEL_CACHE is not None and _LOG_LEVEL_CACHE[0] == cache_key[0] and _LOG_LEVEL_CACHE[1] == cache_key[1]:
+        return _LOG_LEVEL_CACHE[2]
+    cfg = load_config()
+    level = _config_log_level(cfg)
+    _LOG_LEVEL_CACHE = (cache_key[0], cache_key[1], level)
+    return level
+
+
+def _should_log(level: str, cfg: dict | None = None) -> bool:
     order = {"debug": 0, "info": 1, "warning": 2, "error": 3}
-    current = order.get(_config_log_level(cfg), 1)
+    current = order.get(_config_log_level(cfg), 1) if cfg is not None else order.get(_cached_log_level(), 1)
     return order.get(level.lower(), 1) >= current
 
 
 def log(message: str, level: str = "info", **fields) -> None:
-    cfg = load_config()
-    if not _should_log(level, cfg):
+    if not _should_log(level):
         return
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -826,6 +842,20 @@ class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True, inherited_socket: int | None = None):
+        self._inherited_socket = inherited_socket is not None
+        if self._inherited_socket:
+            super().__init__(server_address, RequestHandlerClass, bind_and_activate=False)
+            self.socket = socket.socket(fileno=inherited_socket)
+            self.server_address = self.socket.getsockname()
+            return
+        super().__init__(server_address, RequestHandlerClass, bind_and_activate=bind_and_activate)
+
+    def server_activate(self) -> None:
+        if self._inherited_socket:
+            return
+        super().server_activate()
+
 
 # --------------------------------------------------------------------------- #
 # HTTP client + gossip
@@ -984,7 +1014,7 @@ def _announce(cfg: dict, registry: _PeerRegistry) -> None:
             log(f"announce error {peer}: {exc}")
 
 
-def start_mesh(app_version: str = "", db_path: Path | None = None) -> bool:
+def start_mesh(app_version: str = "", db_path: Path | None = None, inherited_socket: int | None = None) -> bool:
     """Start the mesh HTTP server and gossip daemon if mesh is enabled.
 
     Returns True if mesh was started. Safe to call from the report server; all
@@ -1002,7 +1032,7 @@ def start_mesh(app_version: str = "", db_path: Path | None = None) -> bool:
     port = int(cfg.get("listen_port", DEFAULT_PORT))
     handler = _make_mesh_handler(cfg, registry, app_version, db_path)
     try:
-        server = _ThreadingHTTPServer((host, port), handler)
+        server = _ThreadingHTTPServer((host, port), handler, inherited_socket=inherited_socket)
     except OSError as exc:
         log(f"mesh server bind failed on {host}:{port}: {exc}")
         return False

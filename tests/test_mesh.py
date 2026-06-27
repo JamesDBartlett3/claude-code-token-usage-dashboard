@@ -6,6 +6,7 @@ Run with:  python -m unittest discover -s tests
 """
 
 import json
+import os
 import sqlite3
 import socket
 import subprocess
@@ -109,14 +110,17 @@ class MeshTestBase(unittest.TestCase):
     def _restore_globals(self):
         mesh.DB_PATH, mesh.CONFIG_PATH, mesh.LOG_PATH = self._orig
 
-    def _reserve_port(self) -> int:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.bind(("127.0.0.1", 0))
-            return sock.getsockname()[1]
+    def _reserve_port(self) -> tuple[int, socket.socket]:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        self.addCleanup(sock.close)
+        return sock.getsockname()[1], sock
 
     def _mesh_server_script(self, db_path: Path, config_path: Path, log_path: Path) -> str:
         repo_root = Path(__file__).resolve().parent.parent
         return (
+            "import os\n"
             "import sys\n"
             "import time\n"
             "from pathlib import Path\n"
@@ -126,12 +130,15 @@ class MeshTestBase(unittest.TestCase):
             f"mesh.CONFIG_PATH = Path({str(config_path)!r})\n"
             f"mesh.LOG_PATH = Path({str(log_path)!r})\n"
             "mesh.ensure_schema(mesh.connect(mesh.DB_PATH))\n"
-            "mesh.start_mesh(app_version='test', db_path=mesh.DB_PATH)\n"
+            "if os.environ.get('MESH_LISTEN_FD'):\n"
+            "    mesh.start_mesh(app_version='test', db_path=mesh.DB_PATH, inherited_socket=int(os.environ['MESH_LISTEN_FD']))\n"
+            "else:\n"
+            "    mesh.start_mesh(app_version='test', db_path=mesh.DB_PATH)\n"
             "while True:\n"
             "    time.sleep(1)\n"
         )
 
-    def _spawn_mesh_node(self, db_path: Path, node_id: str, mesh_id: str, port: int) -> subprocess.Popen:
+    def _spawn_mesh_node(self, db_path: Path, node_id: str, mesh_id: str, port: int, listen_socket: socket.socket | None = None) -> subprocess.Popen:
         config_path = self.tmp / f"{node_id}-mesh.json"
         log_path = self.tmp / f"{node_id}-mesh.log"
         cfg = {
@@ -155,12 +162,21 @@ class MeshTestBase(unittest.TestCase):
         mesh.CONFIG_PATH = config_path
         mesh.save_config(cfg)
         mesh.LOG_PATH = log_path
+        env = os.environ.copy()
+        pass_fds = []
+        if listen_socket is not None:
+            fd = listen_socket.fileno()
+            os.set_inheritable(fd, True)
+            env["MESH_LISTEN_FD"] = str(fd)
+            pass_fds.append(fd)
         proc = subprocess.Popen(
             [sys.executable, "-c", self._mesh_server_script(db_path, config_path, log_path)],
             cwd=str(Path(__file__).resolve().parent.parent),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
+            env=env,
+            pass_fds=pass_fds,
         )
         self.addCleanup(self._terminate_process, proc)
         deadline = time.monotonic() + 15
@@ -320,8 +336,8 @@ class TestMeshPhaseTwoFeatures(MeshTestBase):
 
 class TestTwoNodeConvergence(MeshTestBase):
     def _serve(self, cfg, db_path):
-        port = self._reserve_port()
-        self._spawn_mesh_node(db_path, cfg["node_id"], cfg["mesh_id"], port)
+        port, listen_socket = self._reserve_port()
+        self._spawn_mesh_node(db_path, cfg["node_id"], cfg["mesh_id"], port, listen_socket=listen_socket)
         return port
 
     def test_bidirectional_convergence_and_idempotency(self):
