@@ -414,6 +414,124 @@ class TestTwoNodeConvergence(MeshTestBase):
         self.assertEqual(event_count(db_a), event_count(db_b))
         self.assertEqual(event_count(db_b), event_count(db_c))
 
+    def test_new_node_imports_historical_and_recent_records(self):
+        db_a = self.tmp / "a.db"
+        db_b = self.tmp / "b.db"
+        db_joiner = self.tmp / "joiner.db"
+        seed_db(db_a, "nodeA", ["a1"])
+        seed_db(db_b, "nodeB", ["b1"])
+
+        conn_joiner = sqlite3.connect(db_joiner)
+        try:
+            conn_joiner.executescript(BASE_SCHEMA)
+            mesh.ensure_schema(conn_joiner)
+            model_id = mesh.ensure_model_row(conn_joiner, "claude-opus-4-8")
+            conn_joiner.execute(
+                """INSERT INTO turns (
+                        session_id, turn_id, recorded_at, stop_reason,
+                        input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                        cwd, git_branch, model, model_id)
+                    VALUES (?, ?, ?, 'end_turn', 10, 5, 0, 0, '/tmp', 'main', ?, ?)""",
+                ("pre-mesh", "turn-1", "2026-06-25T09:00:00+00:00", "claude-opus-4-8", model_id),
+            )
+            pre_turn_pk = conn_joiner.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn_joiner.execute(
+                """INSERT INTO tool_calls (
+                        uid, turn_pk, session_id, turn_id, recorded_at,
+                        tool_name, tool_input, exit_code, error)
+                    VALUES (?, ?, ?, ?, ?, 'Bash', '{}', 0, NULL)""",
+                ("joiner-pre", pre_turn_pk, "pre-mesh", "turn-1", "2026-06-25T09:00:00+00:00"),
+            )
+            conn_joiner.execute(
+                """INSERT INTO turns (
+                        session_id, turn_id, recorded_at, stop_reason,
+                        input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                        cwd, git_branch, model, model_id)
+                    VALUES (?, ?, ?, 'end_turn', 40, 20, 1, 0, '/tmp', 'main', ?, ?)""",
+                ("concurrent", "turn-1", "2026-06-26T10:00:00+00:00", "claude-opus-4-8", model_id),
+            )
+            concurrent_turn_pk = conn_joiner.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn_joiner.execute(
+                """INSERT INTO tool_calls (
+                        uid, turn_pk, session_id, turn_id, recorded_at,
+                        tool_name, tool_input, exit_code, error)
+                    VALUES (?, ?, ?, ?, ?, 'Bash', '{}', 0, NULL)""",
+                ("joiner-concurrent", concurrent_turn_pk, "concurrent", "turn-1", "2026-06-26T10:00:00+00:00"),
+            )
+            conn_joiner.execute(
+                """INSERT INTO turns (
+                        session_id, turn_id, recorded_at, stop_reason,
+                        input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                        cwd, git_branch, model, model_id)
+                    VALUES (?, ?, ?, 'end_turn', 80, 40, 2, 1, '/tmp', 'main', ?, ?)""",
+                ("newer", "turn-1", "2026-06-26T12:00:00+00:00", "claude-opus-4-8", model_id),
+            )
+            newer_turn_pk = conn_joiner.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn_joiner.execute(
+                """INSERT INTO tool_calls (
+                        uid, turn_pk, session_id, turn_id, recorded_at,
+                        tool_name, tool_input, exit_code, error)
+                    VALUES (?, ?, ?, ?, ?, 'Bash', '{}', 0, NULL)""",
+                ("joiner-newer", newer_turn_pk, "newer", "turn-1", "2026-06-26T12:00:00+00:00"),
+            )
+            conn_joiner.commit()
+            mesh.backfill(conn_joiner, "nodeJoiner")
+            conn_joiner.commit()
+        finally:
+            conn_joiner.close()
+
+        cfg_a = {"mesh_id": "test-mesh", "node_id": "nodeA", "peers": []}
+        cfg_b = {"mesh_id": "test-mesh", "node_id": "nodeB", "peers": []}
+        port_a = self._serve(cfg_a, db_a)
+        port_b = self._serve(cfg_b, db_b)
+
+        mesh.DB_PATH = db_a
+        mesh.sync_with_peer(cfg_a, f"127.0.0.1:{port_b}")
+        mesh.DB_PATH = db_b
+        mesh.sync_with_peer(cfg_b, f"127.0.0.1:{port_a}")
+
+        # Joiner imports existing history first, then catches up with the mesh.
+        conn_joiner = sqlite3.connect(db_joiner)
+        try:
+            mesh.ensure_schema(conn_joiner)
+            mesh.import_database(conn_joiner, db_a, label="joiner-from-a")
+            mesh.import_database(conn_joiner, db_b, label="joiner-from-b")
+            conn_joiner.commit()
+        finally:
+            conn_joiner.close()
+
+        # The mesh then pulls from the joiner and converges.
+        port_joiner = self._serve({"mesh_id": "test-mesh", "node_id": "nodeJoiner", "peers": []}, db_joiner)
+        mesh.DB_PATH = db_a
+        mesh.sync_with_peer(cfg_a, f"127.0.0.1:{port_joiner}")
+        mesh.DB_PATH = db_b
+        mesh.sync_with_peer(cfg_b, f"127.0.0.1:{port_joiner}")
+
+        def fetch_turn_rows(path: Path):
+            conn = sqlite3.connect(path)
+            try:
+                return conn.execute(
+                    "SELECT session_id, turn_id, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens FROM turns ORDER BY session_id, turn_id"
+                ).fetchall()
+            finally:
+                conn.close()
+
+        def fetch_tool_rows(path: Path):
+            conn = sqlite3.connect(path)
+            try:
+                return conn.execute(
+                    "SELECT uid, session_id, turn_id, tool_name, exit_code, error FROM tool_calls ORDER BY uid"
+                ).fetchall()
+            finally:
+                conn.close()
+
+        self.assertEqual(fetch_turn_rows(db_a), fetch_turn_rows(db_b))
+        self.assertEqual(fetch_turn_rows(db_b), fetch_turn_rows(db_joiner))
+        self.assertEqual(fetch_tool_rows(db_a), fetch_tool_rows(db_b))
+        self.assertEqual(fetch_tool_rows(db_b), fetch_tool_rows(db_joiner))
+        self.assertEqual(event_count(db_a), event_count(db_b))
+        self.assertEqual(event_count(db_b), event_count(db_joiner))
+
     def test_mesh_id_mismatch_blocks_replication(self):
         db_a = self.tmp / "a.db"
         db_b = self.tmp / "b.db"
