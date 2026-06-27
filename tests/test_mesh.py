@@ -5,11 +5,15 @@ Stdlib unittest only -- no third-party dependencies, matching the project.
 Run with:  python -m unittest discover -s tests
 """
 
+import json
 import sqlite3
+import socket
+import subprocess
 import sys
 import tempfile
-import threading
+import time
 import unittest
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -104,6 +108,81 @@ class MeshTestBase(unittest.TestCase):
 
     def _restore_globals(self):
         mesh.DB_PATH, mesh.CONFIG_PATH, mesh.LOG_PATH = self._orig
+
+    def _reserve_port(self) -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            return sock.getsockname()[1]
+
+    def _mesh_server_script(self, db_path: Path, config_path: Path, log_path: Path) -> str:
+        repo_root = Path(__file__).resolve().parent.parent
+        return (
+            "import sys\n"
+            "import time\n"
+            "from pathlib import Path\n"
+            f"sys.path.insert(0, {str(repo_root)!r})\n"
+            "import drachometer_mesh as mesh\n"
+            f"mesh.DB_PATH = Path({str(db_path)!r})\n"
+            f"mesh.CONFIG_PATH = Path({str(config_path)!r})\n"
+            f"mesh.LOG_PATH = Path({str(log_path)!r})\n"
+            "mesh.ensure_schema(mesh.connect(mesh.DB_PATH))\n"
+            "mesh.start_mesh(app_version='test', db_path=mesh.DB_PATH)\n"
+            "while True:\n"
+            "    time.sleep(1)\n"
+        )
+
+    def _spawn_mesh_node(self, db_path: Path, node_id: str, mesh_id: str, port: int) -> subprocess.Popen:
+        config_path = self.tmp / f"{node_id}-mesh.json"
+        log_path = self.tmp / f"{node_id}-mesh.log"
+        cfg = {
+            "enabled": True,
+            "mesh_id": mesh_id,
+            "node_id": node_id,
+            "schema_version": mesh.SCHEMA_VERSION,
+            "listen_host": "127.0.0.1",
+            "listen_port": port,
+            "advertise_host": "127.0.0.1",
+            "advertise_port": port,
+            "peers": [],
+            "sync_interval_seconds": 1,
+            "log_level": "info",
+            "max_retries": 1,
+            "retry_backoff_seconds": 0.1,
+            "retention_days": 0,
+            "retention_keep_per_origin": 50,
+            "compress_payloads": False,
+        }
+        mesh.CONFIG_PATH = config_path
+        mesh.save_config(cfg)
+        mesh.LOG_PATH = log_path
+        proc = subprocess.Popen(
+            [sys.executable, "-c", self._mesh_server_script(db_path, config_path, log_path)],
+            cwd=str(Path(__file__).resolve().parent.parent),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        self.addCleanup(self._terminate_process, proc)
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/mesh/hello", timeout=0.5) as resp:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                    if payload.get("node_id") == node_id:
+                        return proc
+            except Exception:
+                time.sleep(0.1)
+        self._terminate_process(proc)
+        raise RuntimeError(f"mesh node {node_id} failed to start on port {port}")
+
+    def _terminate_process(self, proc: subprocess.Popen) -> None:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
 
 
 class TestEventIdentity(MeshTestBase):
@@ -241,13 +320,9 @@ class TestMeshPhaseTwoFeatures(MeshTestBase):
 
 class TestTwoNodeConvergence(MeshTestBase):
     def _serve(self, cfg, db_path):
-        registry = mesh._PeerRegistry(cfg)
-        handler = mesh._make_mesh_handler(cfg, registry, "test", db_path)
-        server = mesh._ThreadingHTTPServer(("127.0.0.1", 0), handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
-        return server.server_address[1]
+        port = self._reserve_port()
+        self._spawn_mesh_node(db_path, cfg["node_id"], cfg["mesh_id"], port)
+        return port
 
     def test_bidirectional_convergence_and_idempotency(self):
         db_a = self.tmp / "a.db"
