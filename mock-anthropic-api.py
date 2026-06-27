@@ -102,9 +102,14 @@ async def messages_proxy(request: Request):
                 import datetime
                 import sys
                 import uuid
+                # Use a specific session ID when testing to group calls
+                session_id = "test-session-mock"
+                if "--test" in sys.argv:
+                    session_id = "automated-test-run-mock"
+                    
                 payload = json.dumps({
-                    "session_id": "test-session-mock",
-                    "turn_id": "turn-1",
+                    "session_id": session_id,
+                    "turn_id": f"turn-{random.randint(1, 20)}",
                     "tool": {
                         "name": tool_name,
                         "input": {"mock": "data"}
@@ -172,9 +177,14 @@ async def messages_proxy(request: Request):
     if tool_name:
         import subprocess
         import sys
+        # Use a specific session ID when testing to group calls
+        session_id = "test-session-mock"
+        if "--test" in sys.argv:
+            session_id = "automated-test-run-mock"
+            
         payload = json.dumps({
-            "session_id": "test-session-mock",
-            "turn_id": "turn-1",
+            "session_id": session_id,
+            "turn_id": f"turn-{random.randint(1, 20)}",
             "tool": {
                 "name": tool_name,
                 "input": {"mock": "data"}
@@ -246,7 +256,12 @@ def run_test():
     try:
         # Give the proxy a brief moment to finish spinning up a worker
         import time
+        import uuid
         time.sleep(1)
+        
+        # Hardcode a single CLI session id so the usage groups correctly into ONE session!
+        test_session = f"auto-test-{uuid.uuid4().hex[:8]}"
+        os.environ["CLAUDE_SESSION_ID"] = test_session
         
         print("Sending 3 mock requests via `claude -p`...")
         for i in range(3):
