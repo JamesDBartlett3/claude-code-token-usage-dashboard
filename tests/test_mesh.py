@@ -739,6 +739,11 @@ class TestSubnetDiscovery(MeshTestBase):
         self.assertFalse(anonymous["mesh_id_match"])
         self.assertNotIn("mesh_id", anonymous)
 
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/mesh/discover", timeout=0.5) as resp:
+            discovered = json.loads(resp.read().decode("utf-8"))
+        self.assertTrue(discovered["ok"])
+        self.assertEqual(discovered["mesh_id"], "home-cccc3333")
+
         hello = mesh.probe_node("127.0.0.1", port, mesh_id="home-cccc3333")
         self.assertIsNotNone(hello)
         self.assertEqual(hello["mesh_id"], "home-cccc3333")
@@ -754,6 +759,34 @@ class TestSubnetDiscovery(MeshTestBase):
         result = mesh.discover_meshes(port=port, subnets=["127.0.0.0/30"])
         ids = {m["mesh_id"] for m in result["meshes"]}
         self.assertIn("home-cccc3333", ids)
+
+    def test_discover_meshes_finds_other_mesh_than_current(self):
+        db_a = self.tmp / "a.db"
+        seed_db(db_a, "nodeA", ["a1"])
+        port, listen_socket = self._reserve_port()
+        self._spawn_mesh_node(db_a, "nodeA", "lab-dddd4444", port, listen_socket=listen_socket)
+
+        mesh.save_config(mesh.normalize_config({
+            "enabled": True,
+            "mesh_id": "home-cccc3333",
+            "node_id": "local-node",
+        }))
+
+        result = mesh.discover_meshes(port=port, subnets=["127.0.0.0/30"])
+        by_id = {m["mesh_id"]: m for m in result["meshes"]}
+        self.assertEqual(result["current_mesh_id"], "home-cccc3333")
+        self.assertIn("lab-dddd4444", by_id)
+        self.assertFalse(by_id["lab-dddd4444"]["is_current"])
+
+    def test_discover_meshes_works_without_current_mesh(self):
+        db_a = self.tmp / "a.db"
+        seed_db(db_a, "nodeA", ["a1"])
+        port, listen_socket = self._reserve_port()
+        self._spawn_mesh_node(db_a, "nodeA", "lab-dddd4444", port, listen_socket=listen_socket)
+
+        result = mesh.discover_meshes(port=port, subnets=["127.0.0.0/30"])
+        self.assertIsNone(result["current_mesh_id"])
+        self.assertEqual({m["mesh_id"] for m in result["meshes"]}, {"lab-dddd4444"})
 
     def test_probe_node_rejects_non_mesh_port(self):
         port, _ = self._reserve_port()  # bound but not a mesh server

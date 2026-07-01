@@ -8,12 +8,13 @@ is a no-op. Nodes gossip over plain stdlib HTTP using pull-based anti-entropy
 (compare per-origin digests, fetch the events you are missing): no broker, no
 third-party dependencies.
 
-Scope is deliberately limited to LAN/VM networks. Mesh endpoints require callers
-to present the mesh identifier (``<name>-<8 hex>``), which acts only as a
-lightweight shared-secret gate to prevent accidental or casual cross-mesh
-merges on a shared LAN (coworkers, roommates). It is **not** robust
-authentication and there is still no TLS, so do not expose mesh ports to the
-public internet.
+Scope is deliberately limited to LAN/VM networks. Most mesh endpoints require
+callers to present the mesh identifier (``<name>-<8 hex>``), which acts only
+as a lightweight shared-secret gate to prevent accidental or casual
+cross-mesh merges on a shared LAN (coworkers, roommates). Discovery keeps one
+anonymous, read-only probe so nodes can advertise which mesh they belong to.
+This is **not** robust authentication and there is still no TLS, so do not
+expose mesh ports to the public internet.
 
 This file is both an importable library (the hook and the dashboard server import
 it) and a CLI for setup and maintenance::
@@ -817,7 +818,14 @@ def _make_mesh_handler(cfg: dict, registry: _PeerRegistry, app_version: str,
         def do_GET(self):  # noqa: N802
             path, _, query = self.path.partition("?")
             params = dict(urllib.parse.parse_qsl(query, keep_blank_values=True))
-            if path == "/mesh/hello":
+            if path == "/mesh/discover":
+                self._send_json({
+                    "ok": bool(cfg.get("enabled") and cfg.get("mesh_id") and cfg.get("node_id")),
+                    "mesh_id": cfg.get("mesh_id"),
+                    "node_id": cfg.get("node_id"),
+                    "schema_version": int(cfg.get("schema_version", SCHEMA_VERSION)),
+                })
+            elif path == "/mesh/hello":
                 if not self._mesh_authorized(params.get("mesh_id")):
                     self._send_json({"ok": False, "mesh_id_match": False})
                     return
@@ -1359,6 +1367,26 @@ def _hosts_for_subnets(subnets: list[str], cap: int = DISCOVERY_MAX_HOSTS) -> li
     return hosts
 
 
+def probe_discovery(host: str, port: int = DEFAULT_PORT,
+                    timeout: float = DISCOVERY_TIMEOUT) -> dict | None:
+    """Return anonymous mesh discovery metadata for a reachable node."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout)
+        try:
+            if sock.connect_ex((host, port)) != 0:
+                return None
+        except OSError:
+            return None
+    try:
+        hello = _get_json(f"{host}:{port}", "/mesh/discover", timeout=timeout)
+    except Exception:
+        return None
+    if not isinstance(hello, dict) or not hello.get("ok") or not hello.get("mesh_id"):
+        return None
+    hello["advertise"] = f"{host}:{port}"
+    return hello
+
+
 def probe_node(host: str, port: int = DEFAULT_PORT, timeout: float = DISCOVERY_TIMEOUT,
                mesh_id: str | None = None) -> dict | None:
     """Return a peer's hello payload only when it proves membership in ``mesh_id``."""
@@ -1422,22 +1450,11 @@ def discover_meshes(port: int = DEFAULT_PORT, timeout: float = DISCOVERY_TIMEOUT
     cfg = load_config() or {}
     current = cfg.get("mesh_id") if cfg.get("enabled") else None
     subnets = subnets if subnets is not None else list_local_subnets()
-    if not current:
-        result = {
-            "subnets": subnets,
-            "scanned_hosts": 0,
-            "meshes": [],
-            "current_mesh_id": None,
-            "scanned_at": datetime.now(timezone.utc).isoformat(),
-        }
-        with _RUNTIME_LOCK:
-            _RUNTIME["last_scan"] = result
-        return result
     hosts = _hosts_for_subnets(subnets)
     hellos: list[dict] = []
     if hosts:
         with ThreadPoolExecutor(max_workers=min(max_workers, len(hosts))) as pool:
-            for hello in pool.map(lambda h: probe_node(h, port, timeout, current), hosts):
+            for hello in pool.map(lambda h: probe_discovery(h, port, timeout), hosts):
                 if hello:
                     hellos.append(hello)
     meshes = _group_meshes(hellos, current)
