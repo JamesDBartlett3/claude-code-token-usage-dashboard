@@ -189,9 +189,10 @@ class MeshTestBase(unittest.TestCase):
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/mesh/hello", timeout=0.5) as resp:
+                hello_url = f"http://127.0.0.1:{port}{mesh._mesh_path('/mesh/hello', mesh_id)}"
+                with urllib.request.urlopen(hello_url, timeout=0.5) as resp:
                     payload = json.loads(resp.read().decode("utf-8"))
-                    if payload.get("node_id") == node_id:
+                    if payload.get("ok") and payload.get("node_id") == node_id:
                         return proc
             except Exception:
                 time.sleep(0.1)
@@ -732,10 +733,22 @@ class TestSubnetDiscovery(MeshTestBase):
         port, listen_socket = self._reserve_port()
         self._spawn_mesh_node(db_a, "nodeA", "home-cccc3333", port, listen_socket=listen_socket)
 
-        hello = mesh.probe_node("127.0.0.1", port)
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/mesh/hello", timeout=0.5) as resp:
+            anonymous = json.loads(resp.read().decode("utf-8"))
+        self.assertFalse(anonymous["ok"])
+        self.assertFalse(anonymous["mesh_id_match"])
+        self.assertNotIn("mesh_id", anonymous)
+
+        hello = mesh.probe_node("127.0.0.1", port, mesh_id="home-cccc3333")
         self.assertIsNotNone(hello)
         self.assertEqual(hello["mesh_id"], "home-cccc3333")
         self.assertEqual(hello["advertise"], f"127.0.0.1:{port}")
+
+        mesh.save_config(mesh.normalize_config({
+            "enabled": True,
+            "mesh_id": "home-cccc3333",
+            "node_id": "local-node",
+        }))
 
         # A /30 over loopback includes 127.0.0.1 as a scannable host.
         result = mesh.discover_meshes(port=port, subnets=["127.0.0.0/30"])

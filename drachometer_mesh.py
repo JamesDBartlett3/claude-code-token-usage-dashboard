@@ -8,11 +8,12 @@ is a no-op. Nodes gossip over plain stdlib HTTP using pull-based anti-entropy
 (compare per-origin digests, fetch the events you are missing): no broker, no
 third-party dependencies.
 
-Scope is deliberately limited to LAN/VM networks. The mesh identifier
-(``<name>-<8 hex>``) prevents *accidental* cross-merges between unrelated meshes
-that happen to share a LAN (coworkers, roommates); it is **not** a security
-boundary -- there is no authentication and no TLS. Do not expose mesh ports to
-the public internet.
+Scope is deliberately limited to LAN/VM networks. Mesh endpoints require callers
+to present the mesh identifier (``<name>-<8 hex>``), which acts only as a
+lightweight shared-secret gate to prevent accidental or casual cross-mesh
+merges on a shared LAN (coworkers, roommates). It is **not** robust
+authentication and there is still no TLS, so do not expose mesh ports to the
+public internet.
 
 This file is both an importable library (the hook and the dashboard server import
 it) and a CLI for setup and maintenance::
@@ -45,6 +46,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 import uuid
 from collections import deque
@@ -325,10 +327,15 @@ def collect_health_metrics(cfg: dict | None = None, db_path: Path | None = None)
     cfg = normalize_config(cfg or load_config() or {}) or {}
     peers = cfg.get("peers") or []
     reachable = 0
+    mesh_id = cfg.get("mesh_id")
     for peer in peers:
+        if not mesh_id:
+            continue
         try:
-            _get_json(peer, "/mesh/hello", timeout=1.0)
+            hello = _get_json(peer, _mesh_path("/mesh/hello", mesh_id), timeout=1.0)
         except Exception:
+            continue
+        if not hello.get("ok"):
             continue
         reachable += 1
     with _db(db_path) as conn:
@@ -798,26 +805,42 @@ def _make_mesh_handler(cfg: dict, registry: _PeerRegistry, app_version: str,
             self.end_headers()
             self.wfile.write(body)
 
+        def _mesh_authorized(self, presented_mesh_id: str | None) -> bool:
+            return bool(presented_mesh_id) and presented_mesh_id == cfg.get("mesh_id")
+
+        def _require_mesh_id(self, presented_mesh_id: str | None) -> bool:
+            if self._mesh_authorized(presented_mesh_id):
+                return True
+            self._send_json({"error": "mesh mismatch"}, status=403)
+            return False
+
         def do_GET(self):  # noqa: N802
             path, _, query = self.path.partition("?")
-            params = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
+            params = dict(urllib.parse.parse_qsl(query, keep_blank_values=True))
             if path == "/mesh/hello":
+                if not self._mesh_authorized(params.get("mesh_id")):
+                    self._send_json({"ok": False, "mesh_id_match": False})
+                    return
                 self._send_json({
-                    "mesh_id": cfg["mesh_id"],
+                    "ok": True,
+                    "mesh_id_match": True,
                     "node_id": cfg["node_id"],
                     "schema_version": int(cfg.get("schema_version", SCHEMA_VERSION)),
                     "app_version": app_version,
                     "migration_note": "upgrade both nodes to the same release and re-run 'python drachometer_mesh.py migrate' if schema versions differ",
                 })
             elif path == "/mesh/digest":
+                if not self._require_mesh_id(params.get("mesh_id")):
+                    return
                 with _db(db_path) as conn:
                     origins = local_origin_counts(conn)
                 self._send_json({
-                    "mesh_id": cfg["mesh_id"],
                     "schema_version": SCHEMA_VERSION,
                     "origins": origins,
                 })
             elif path == "/mesh/event-ids":
+                if not self._require_mesh_id(params.get("mesh_id")):
+                    return
                 origin = params.get("origin", "")
                 with _db(db_path) as conn:
                     ids = [r[0] for r in conn.execute(
@@ -837,6 +860,8 @@ def _make_mesh_handler(cfg: dict, registry: _PeerRegistry, app_version: str,
                 self._send_json({"error": "bad json"}, status=400)
                 return
             if path == "/mesh/events":
+                if not self._require_mesh_id(body.get("mesh_id")):
+                    return
                 ids = body.get("ids") or []
                 qmarks = ",".join("?" * len(ids))
                 events = []
@@ -855,11 +880,13 @@ def _make_mesh_handler(cfg: dict, registry: _PeerRegistry, app_version: str,
                             })
                 self._send_json({"events": events})
             elif path == "/mesh/announce":
+                if not self._require_mesh_id(body.get("mesh_id")):
+                    return
                 # Startup registration: a peer tells us how to reach it.
                 advertise = body.get("advertise")
-                if body.get("mesh_id") == cfg["mesh_id"] and advertise:
+                if advertise:
                     registry.add(advertise)
-                self._send_json({"ok": True, "mesh_id": cfg["mesh_id"]})
+                self._send_json({"ok": True})
             else:
                 self._send_json({"error": "not found"}, status=404)
 
@@ -922,6 +949,12 @@ def _chunks(seq, size):
         yield seq[i:i + size]
 
 
+def _mesh_path(path: str, mesh_id: str, **params) -> str:
+    query = {"mesh_id": mesh_id}
+    query.update({key: value for key, value in params.items() if value is not None})
+    return f"{path}?{urllib.parse.urlencode(query)}"
+
+
 def sync_with_peer(cfg: dict, peer: str) -> int:
     """Pull every event this node is missing from one peer. Returns count applied."""
     cfg = normalize_config(cfg) or {}
@@ -931,14 +964,13 @@ def sync_with_peer(cfg: dict, peer: str) -> int:
     started = time.monotonic()
     for attempt in range(1, attempts + 1):
         try:
-            hello = _get_json(peer, "/mesh/hello")
-            if hello.get("mesh_id") != cfg["mesh_id"]:
+            hello = _get_json(peer, _mesh_path("/mesh/hello", cfg["mesh_id"]))
+            if not hello.get("ok"):
                 log(
                     "skip peer due to mesh id mismatch",
                     level="warning",
                     event="mesh_mismatch",
                     peer=peer,
-                    remote_mesh_id=hello.get("mesh_id"),
                     local_mesh_id=cfg.get("mesh_id"),
                 )
                 return 0
@@ -955,14 +987,16 @@ def sync_with_peer(cfg: dict, peer: str) -> int:
                 )
                 return 0
 
-            remote = _get_json(peer, "/mesh/digest")
+            remote = _get_json(peer, _mesh_path("/mesh/digest", cfg["mesh_id"]))
             with _db() as conn:
                 local_counts = local_origin_counts(conn)
             applied = 0
             for origin, remote_count in (remote.get("origins") or {}).items():
                 if local_counts.get(origin, 0) >= remote_count:
                     continue
-                remote_ids = _get_json(peer, f"/mesh/event-ids?origin={origin}").get("ids", [])
+                remote_ids = _get_json(
+                    peer, _mesh_path("/mesh/event-ids", cfg["mesh_id"], origin=origin)
+                ).get("ids", [])
                 with _db() as conn:
                     have = {
                         r[0] for r in conn.execute(
@@ -971,7 +1005,9 @@ def sync_with_peer(cfg: dict, peer: str) -> int:
                     }
                 missing = [i for i in remote_ids if i not in have]
                 for batch in _chunks(missing, int(cfg.get("fetch_batch_size", FETCH_BATCH))):
-                    events = _post_json(peer, "/mesh/events", {"ids": batch}).get("events", [])
+                    events = _post_json(
+                        peer, "/mesh/events", {"mesh_id": cfg["mesh_id"], "ids": batch}
+                    ).get("events", [])
                     log(
                         "pulling sync batch",
                         level="debug",
@@ -1323,8 +1359,11 @@ def _hosts_for_subnets(subnets: list[str], cap: int = DISCOVERY_MAX_HOSTS) -> li
     return hosts
 
 
-def probe_node(host: str, port: int = DEFAULT_PORT, timeout: float = DISCOVERY_TIMEOUT) -> dict | None:
-    """Return a peer's ``/mesh/hello`` payload, or None if it is not a mesh node."""
+def probe_node(host: str, port: int = DEFAULT_PORT, timeout: float = DISCOVERY_TIMEOUT,
+               mesh_id: str | None = None) -> dict | None:
+    """Return a peer's hello payload only when it proves membership in ``mesh_id``."""
+    if not mesh_id:
+        return None
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(timeout)
         try:
@@ -1333,11 +1372,12 @@ def probe_node(host: str, port: int = DEFAULT_PORT, timeout: float = DISCOVERY_T
         except OSError:
             return None
     try:
-        hello = _get_json(f"{host}:{port}", "/mesh/hello", timeout=timeout)
+        hello = _get_json(f"{host}:{port}", _mesh_path("/mesh/hello", mesh_id), timeout=timeout)
     except Exception:
         return None
-    if not isinstance(hello, dict) or not hello.get("mesh_id"):
+    if not isinstance(hello, dict) or not hello.get("ok"):
         return None
+    hello["mesh_id"] = mesh_id
     hello["advertise"] = f"{host}:{port}"
     return hello
 
@@ -1382,11 +1422,22 @@ def discover_meshes(port: int = DEFAULT_PORT, timeout: float = DISCOVERY_TIMEOUT
     cfg = load_config() or {}
     current = cfg.get("mesh_id") if cfg.get("enabled") else None
     subnets = subnets if subnets is not None else list_local_subnets()
+    if not current:
+        result = {
+            "subnets": subnets,
+            "scanned_hosts": 0,
+            "meshes": [],
+            "current_mesh_id": None,
+            "scanned_at": datetime.now(timezone.utc).isoformat(),
+        }
+        with _RUNTIME_LOCK:
+            _RUNTIME["last_scan"] = result
+        return result
     hosts = _hosts_for_subnets(subnets)
     hellos: list[dict] = []
     if hosts:
         with ThreadPoolExecutor(max_workers=min(max_workers, len(hosts))) as pool:
-            for hello in pool.map(lambda h: probe_node(h, port, timeout), hosts):
+            for hello in pool.map(lambda h: probe_node(h, port, timeout, current), hosts):
                 if hello:
                     hellos.append(hello)
     meshes = _group_meshes(hellos, current)
@@ -1416,14 +1467,16 @@ def _update_liveness_and_propagation(cfg: dict, registry: _PeerRegistry) -> None
     peer_has: dict[str, set[str]] = {}
     for peer in registry.all():
         try:
-            hello = _get_json(peer, "/mesh/hello", timeout=2.0)
+            hello = _get_json(peer, _mesh_path("/mesh/hello", mesh_id), timeout=2.0)
         except Exception:
             continue
-        if hello.get("mesh_id") != mesh_id:
+        if not hello.get("ok"):
             continue
         active[peer] = {"last_seen": now, "node_id": hello.get("node_id")}
         try:
-            ids = _get_json(peer, f"/mesh/event-ids?origin={node_id}", timeout=3.0).get("ids", [])
+            ids = _get_json(
+                peer, _mesh_path("/mesh/event-ids", mesh_id, origin=node_id), timeout=3.0
+            ).get("ids", [])
             peer_has[peer] = set(ids)
         except Exception:
             peer_has[peer] = set()
@@ -1760,8 +1813,8 @@ def cmd_status(args) -> int:
     print(f"peers:     {len(peers)}")
     for peer in peers:
         try:
-            hello = _get_json(peer, "/mesh/hello", timeout=3.0)
-            ok = "reachable" if hello.get("mesh_id") == cfg.get("mesh_id") else "MESH MISMATCH"
+            hello = _get_json(peer, _mesh_path("/mesh/hello", cfg.get("mesh_id")), timeout=3.0)
+            ok = "reachable" if hello.get("ok") else "MESH MISMATCH"
             print(f"             {peer}: {ok}")
         except Exception as exc:
             print(f"             {peer}: unreachable ({exc})")
